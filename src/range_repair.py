@@ -268,6 +268,34 @@ def setup_logging(option_group):
         logger.addHandler(handler)
     return
 
+def get_valid_keyspaces():
+    cmd = ["nodetool" ,"cfstats", "|", "grep",  "'Keyspace:'"]
+    success, cmd, stdout, stderr = run_command(*cmd)
+    if success:
+        stdout = stdout.split("\n")
+        valid_keyspaces = [k.split(": ")[1] for k in stdout if 'Keyspace' in k]
+        return valid_keyspaces
+    else:
+        print "Could not gather valid keyspace info"
+        sys.exit(1)
+
+def get_valid_col_families(keyspace):
+    cmd = ["nodetool" ,"cfstats", keyspace, "|", "grep",  "'Table:'"]
+    success, cmd, stdout, stderr = run_command(*cmd)
+    if success:
+        stdout = stdout.split("\n")
+        validcolumnfamilies = [c.split(": ")[1] for c in stdout if 'Table' in c]
+        return validcolumnfamilies
+    else:
+        print "Could not gather valid columnfamily info"
+        sys.exit(1)    
+
+def is_keyspace_valid(keyspace):
+    return keyspace in get_valid_keyspaces()
+    
+def is_columnfamily_valid(keyspace, columnfamily):
+    return columnfamily in get_valid_col_families(keyspace)
+    
 def repair(options):
     """Repair a keyspace/columnfamily by breaking each token range into $start_steps ranges
     :param options.keyspace: Cassandra keyspace to repair
@@ -276,7 +304,18 @@ def repair(options):
     :param options.workers: Number of workers to use
     """
     tokens = Token_Container(options)
-
+    if options.keyspace:
+        if not is_keyspace_valid(options.keyspace):
+            print "Not a valid keyspace - {keyspace}".format(keyspace=options.keyspace)
+            logging.info("Not a valid keyspace - {keyspace}".format(keyspace=options.keyspace))
+            sys.exit(1)
+    if options.columnfamily:
+        for col in options.columnfamily:
+            if not is_columnfamily_valid(options.keyspace, col):
+                print "Not a valid columnfamily - {columnfamily}".format(columnfamily=col)
+                logging.info("Not a valid columnfamily - {columnfamily}".format(columnfamily=col))
+                sys.exit(1)   
+                                       
     worker_pool = multiprocessing.Pool(options.workers)
 
     for token_num, host_token in enumerate(tokens.host_tokens):
